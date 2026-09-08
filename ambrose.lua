@@ -1,6 +1,6 @@
 while task.wait(3) do
 	
-local Event = game:GetService("ReplicatedStorage").Systems.Character.Remote.SyncStatsRE
+local Event = game:GetService("ReplicatedStorage").Systems.Character.Remotes.SyncStatsRE
 firesignal(Event.OnClientEvent, 
     "mana",
     100
