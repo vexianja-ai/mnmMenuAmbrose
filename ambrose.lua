@@ -1,3 +1,17 @@
+while task.wait(3) do
+	
+local Event = game:GetService("ReplicatedStorage").Systems.Character.Remote.SyncStatsRE
+firesignal(Event.OnClientEvent, 
+    "mana",
+    100
+)
+
+	firesignal(Event.OnClientEvent, 
+    "stamina",
+    100
+)
+end
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -136,7 +150,7 @@ end)
 -- References & State Variables
 local commonDirectory = ReplicatedStorage:FindFirstChild("CommonDirectory")
 local remotesFolder = ReplicatedStorage:WaitForChild("Systems"):WaitForChild("Melee"):WaitForChild("Remotes")
-local buildingFolderModule = game.ReplicatedStorage:FindFirstChild("Systems"):FindFirstChild("Building")
+local buildingFolderModule = commonDirectory and commonDirectory:FindFirstChild("Building")
 local buildingRemotes = buildingFolderModule and buildingFolderModule:FindFirstChild("Remotes")
 
 local idToRealNameMap = {
@@ -260,7 +274,33 @@ local function executeRepair()
 	end
 end
 
--- Input Listeners (PC Keybinds & Mobile Touch)
+-- Core Attack Execution Function
+local function performAttack(holdDuration)
+	local character = player.Character
+	local tool = getValidMeleeTool(character)
+	local attackRE = remotesFolder and remotesFolder:FindFirstChild("AttackRE")
+	local weaponUseEvent = remotesFolder and remotesFolder:FindFirstChild("WeaponUseEvent")
+	
+	if tool and attackRE then
+		if weaponUseEvent then
+			if weaponUseEvent:IsA("BindableEvent") then weaponUseEvent:Fire()
+			elseif weaponUseEvent:IsA("RemoteEvent") then weaponUseEvent:FireServer(tool) end
+		end
+		if holdDuration >= 0.3 then
+			attackRE:FireServer(3, tool)
+			task.wait(0.15)
+			local targetHum, hitPos = getNearestTarget(character)
+			attackRE:FireServer(4, tool, targetHum, hitPos)
+		else
+			attackRE:FireServer(0, tool)
+			task.wait(0.1)
+			local targetHum, hitPos = getNearestTarget(character)
+			attackRE:FireServer(1, tool, targetHum, hitPos)
+		end
+	end
+end
+
+-- Input Listeners (PC Keybinds)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.KeyCode == Enum.KeyCode.P then toggleMelee()
 	elseif input.KeyCode == Enum.KeyCode.O then toggleBlock()
@@ -288,36 +328,40 @@ UserInputService.InputEnded:Connect(function(input)
 	elseif input.UserInputType == Enum.UserInputType.MouseButton1 and meleeToggled and isHoldingLMB then
 		isHoldingLMB = false
 		local holdDuration = tick() - lmbDownTime
-		local character = player.Character
-		local tool = getValidMeleeTool(character)
-		local attackRE = remotesFolder and remotesFolder:FindFirstChild("AttackRE")
-		local weaponUseEvent = remotesFolder and remotesFolder:FindFirstChild("WeaponUseEvent")
-		
-		if tool and attackRE then
-			if weaponUseEvent then
-				if weaponUseEvent:IsA("BindableEvent") then weaponUseEvent:Fire()
-				elseif weaponUseEvent:IsA("RemoteEvent") then weaponUseEvent:FireServer(tool) end
-			end
-			if holdDuration >= 0.3 then
-				attackRE:FireServer(3, tool)
-				task.wait(0.15)
-				local targetHum, hitPos = getNearestTarget(character)
-				attackRE:FireServer(4, tool, targetHum, hitPos)
-			else
-				attackRE:FireServer(0, tool)
-				task.wait(0.1)
-				local targetHum, hitPos = getNearestTarget(character)
-				attackRE:FireServer(1, tool, targetHum, hitPos)
-			end
-		end
+		performAttack(holdDuration)
 	end
 end)
 
--- Mobile Click Support on text hints
+-- Mobile Click Support on text hints & Custom Mobile Attack Integration
 meleeHint.MouseButton1Click:Connect(toggleMelee)
 blockHint.MouseButton1Click:Connect(toggleBlock)
 constructHint.MouseButton1Click:Connect(toggleConstructUI)
 repairHint.MouseButton1Click:Connect(executeRepair)
+
+-- Bind Mobile Attack Button if available inside PlayerGui
+task.spawn(function()
+	local touchScheme = playerGui:WaitForChild("ControlsGui", 5) and playerGui.ControlsGui:WaitForChild("TouchScheme", 5)
+	local mobileAttackBtn = touchScheme and touchScheme:WaitForChild("Attack", 5)
+	if mobileAttackBtn and mobileAttackBtn:IsA("TextButton") then
+		local mobileDownTime = 0
+		local mobileHolding = false
+		
+		mobileAttackBtn.MouseButton1Down:Connect(function()
+			if meleeToggled then
+				mobileHolding = true
+				mobileDownTime = tick()
+			end
+		end)
+		
+		mobileAttackBtn.MouseButton1Up:Connect(function()
+			if meleeToggled and mobileHolding then
+				mobileHolding = false
+				local holdDuration = tick() - mobileDownTime
+				performAttack(holdDuration)
+			end
+		end)
+	end
+end)
 
 -- Visualizer Update Logic
 idTextBox:GetPropertyChangedSignal("Text"):Connect(function()
